@@ -1,0 +1,171 @@
+/*
+
+Assignment 2: Arrays, panning, midi
+2.11.2013
+
+The programme runs within a single while loop of 30 seconds duration.
+As the programme runs different timing trigger points are reached that 
+move the composition on to the next stage.
+
+In the first half of the composition, the sine oscillators vary their notes at random
+from the notes array. In the second half, the tri oscillators are more controlled and vary
+in fixed intervals to each other cycling through the notes array in order
+
+Note to reviewer: This composition uses the % operator to return the remainder from a division.
+It also retrieves values for gain, freq etc using the a.gain(), a.freq() functions
+
+*/
+
+
+// Set up oscillators and panners
+SinOsc osc1 => Pan2 p1 => dac;
+SinOsc osc2 => Pan2 p2 => dac;
+SawOsc osc3 => Pan2 p3 => dac;
+SinOsc osc4 => Pan2 p4 => dac;
+TriOsc osc5 => Pan2 p5 => dac;
+TriOsc osc6 => Pan2 p6 => dac;
+TriOsc osc7 => Pan2 p7 => dac;
+
+
+// Initialise gain
+0.0 => osc1.gain;
+0.0 => osc2.gain;
+0.0 => osc3.gain;
+0.0 => osc4.gain;
+0.0 => osc4.freq;
+0.0 => osc5.gain;
+0.0 => osc6.gain;
+0.0 => osc7.gain;
+
+// Set panning to centre
+0.0 => p1.pan;
+0.0 => p2.pan;
+0.0 => p3.pan;
+0.0 => p4.pan;
+0.0 => p5.pan;
+0.0 => p6.pan;
+0.0 => p7.pan;
+
+// MIDI notes array
+[50, 52, 53, 55, 57, 59, 60, 62] @=> int midi_notes[];
+midi_notes.cap() -1 => int midi_notes_count;
+
+
+// Standard time pulse interval
+0.25::second => dur short_pulse;
+0.5::second => dur long_pulse;
+
+
+// Timing variables
+now + 30::second => time end;
+now + 5::second => time fade_in;
+now + 10::second => time transit1;
+now + 18::second => time transit2;
+now + 27::second => time fade_out;
+time interval;
+
+// Variables used to adjust panning
+2.0 /(5 * 4/2) => float pan_delta;
+1 => int pan_mult;
+
+// Counter used in middle section
+0 => int c;
+
+// Multiplier used to adjust frequencies
+9.0/8.0 => float mult;
+
+0.0 => float gain_set;
+0.005 => float gain_plus;
+0.0 => float pan_set;
+
+// Set bass note for start
+Std.mtof(midi_notes[0])/2 => osc4.freq;
+
+while (now < end) {
+    
+    // Each oscillator is set to a random value chosen to be within
+    // the bounds of the midi notes array
+    Std.mtof(midi_notes[Math.random2(0,midi_notes_count)]) => osc1.freq;
+    Std.mtof(midi_notes[Math.random2(0,midi_notes_count)]) => osc2.freq;
+    Std.mtof(midi_notes[Math.random2(0,midi_notes_count)]) => osc3.freq;  
+    
+    if(now < fade_in) {
+                    
+        // Gradually increase the gain values
+        gain_plus +=> gain_set;
+        gain_set => osc1.gain;
+        gain_set => osc2.gain;
+        gain_set => osc3.gain;        
+        gain_set => osc4.gain;      
+
+        // pan_mult is used to decide whether to
+        // add or to subtract a panning increment. When 
+        // the +1.0 or -1.0 limits are reached the direction is changed
+        if(1.0 - p1.pan() < 0.1) {
+            -1 => pan_mult;
+        }
+        else if (p1.pan() +1.0 < 0.1) {
+            1 => pan_mult;
+        }
+    
+        // Adjust the panning
+        pan_mult*pan_delta +=> pan_set;
+        pan_set => p1.pan;
+        pan_set => p2.pan;
+        pan_set => p3.pan;        
+    }
+
+    // Begin the transition fade between the sine
+    // and the triangle wave oscillators
+    if (now > transit1 && now <= fade_out) {
+        
+        // If the sine oscillators are still playing
+        if(osc1.gain() > 0) {
+            
+            // Bass note changes at transit 2
+            if(now > transit2) {
+                Std.mtof(midi_notes[0])/2 => osc4.freq;
+            }
+            else {
+                Std.mtof(midi_notes[3])/2 => osc4.freq;                
+            }
+            
+            osc1.gain() - 0.002 => osc1.gain;
+            osc2.gain() - 0.002 => osc2.gain;
+            osc3.gain() - 0.002 => osc3.gain;            
+
+            Std.mtof(midi_notes[c%8])*2 => osc5.freq;
+            Std.mtof(midi_notes[(c+2)%8])*2 => osc6.freq;            
+            Std.mtof(midi_notes[(c+4)%8])*2 => osc7.freq;            
+            osc5.gain() + 0.001 => osc5.gain;            
+            osc6.gain() + 0.001 => osc6.gain;
+            osc7.gain() + 0.001 => osc7.gain;
+            
+            c++;
+        }
+        // After the sine oscillators are quiet, switch
+        // the tri oscillator frequencies once per second
+        else if(now - interval > long_pulse) {
+            osc4.freq()*mult => osc4.freq;   
+            osc5.freq()*mult => osc5.freq; 
+            osc6.freq()*mult => osc6.freq;
+            osc7.freq()*mult => osc7.freq;
+            now => interval;
+        }
+    }
+    // In final fade out, reduce frequency and gain
+    // on the active triangle wave oscillators
+    else if (now > fade_out) {
+        osc4.freq()/mult => osc4.freq; 
+        osc4.gain() - 0.008 => osc4.gain; 
+        osc5.freq()/mult => osc5.freq; 
+        osc5.gain() - 0.0045 => osc5.gain;
+        osc6.freq()/mult => osc6.freq;
+        osc6.gain() - 0.0045 => osc6.gain;
+        osc7.freq()/mult => osc7.freq; 
+        osc7.gain() - 0.0045 => osc7.gain;        
+    }
+     
+    // Increment "now"
+    short_pulse => now;        
+}
